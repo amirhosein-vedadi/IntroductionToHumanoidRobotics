@@ -176,3 +176,75 @@ def IK_leg(Body, D, A, B, Foot):
     
     q = np.array([q2, q3, q4, q5, q6, q7])
     return q
+
+def InverseKinematics_LM(to, Target, links):
+    idx = FindRoute(links, to)
+    wn_pos = 1/0.3
+    wn_ang = 1/(2*np.pi)
+    We = np.diag([wn_pos, wn_pos, wn_pos, wn_ang, wn_ang, wn_ang])
+    Wn = np.eye(len(idx))
+
+    ForwardKinematics(links, 0)
+    err = CalcVWerr(Target, links[to])
+    Ek = err.T @ We @ err
+    # print(err)
+
+    for n in range(10):
+        J = CalcJacobian(idx, links)
+        Jh = J.T @ We @ J + Wn * (Ek + 0.002)  # Hk + wn
+        gerr = J.T @ We @ err  # gk
+        dq = np.linalg.solve(Jh, gerr)  # new
+
+        MoveJoints(idx, dq, links)
+        ForwardKinematics(links, 0)
+        err = CalcVWerr(Target, links[to])
+        Ek2 = err.T @ We @ err
+        if Ek2 < 1E-12:
+            break
+        elif Ek2 < Ek:
+            Ek = Ek2
+        else:
+            MoveJoints(idx, -dq, links)  # revert
+            ForwardKinematics(links, 0)
+            break
+
+    return np.linalg.norm(err)
+
+def CalcVWerr(Cref, Cnow):
+    perr = Cref.p - Cnow.p
+    Rerr = Cnow.R.T @ Cref.R
+    werr = Cnow.R @ rot2omega(Rerr)
+    return np.concatenate((perr, werr))
+
+def rot2omega(R):
+    el = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+    norm_el = np.linalg.norm(el)
+    if norm_el > np.finfo(float).eps:
+        w = np.arctan2(norm_el, np.trace(R) - 1) / norm_el * el
+    elif R[0, 0] > 0 and R[1, 1] > 0 and R[2, 2] > 0:
+        w = np.zeros(3)
+    else:
+        w = np.pi/2 * np.array([R[0, 0] + 1, R[1, 1] + 1, R[2, 2] + 1])
+    return w
+
+def CalcJacobian(idx, links):
+    jsize = len(idx)
+    target = links[idx[-1]].p  # absolute target position
+    J = np.zeros((6, jsize))
+
+    for n in range(jsize):
+        j = idx[n]
+        a = links[j].R @ links[j].a  # joint axis vector in world frame
+        J[:, n] = np.concatenate((np.cross(a, target - links[j].p), a))
+    return J
+
+def MoveJoints(idx, dq, links):
+    for n in range(len(idx)):
+        j = idx[n]
+        links[j].q += dq[n]
+
+def SetJointAngles(ulink, idx, q):
+    for n, j in enumerate(idx):
+        ulink[j].q = q[n]
+    
+    ForwardKinematics(ulink, 0)  # In Python, we typically start indexing from 0

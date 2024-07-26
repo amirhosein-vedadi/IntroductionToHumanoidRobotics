@@ -30,8 +30,8 @@ FindChildren(uLINK)
 for n, link in enumerate(uLINK):
     globals()[link.name] = n
 
-# uLINK[BODY].p = np.array([0.0, 0.0, 0.6])
-# uLINK[BODY].R = np.eye(3)
+uLINK[BODY].p = np.array([0.0, 0.0, 0.6])
+uLINK[BODY].R = np.eye(3)
 
 def print_joint_angles():
     print("\nJoint angles (in radians):")
@@ -39,8 +39,10 @@ def print_joint_angles():
         print(f"RLEG_J{i}: {uLINK[RLEG_J0 + i].q}")
         print(f"LLEG_J{i}: {uLINK[LLEG_J0 + i].q}")
 
+ForwardKinematics(uLINK, 0)
+
 # Raise the right leg by 5 cm
-target_foot_pos = uLINK[RLEG_J5].p + np.array([0, -0.1, -0.6])  # Raise by 5 cm
+target_foot_pos = uLINK[RLEG_J5].p + np.array([0, -0.03, 0.0])  # Raise by 5 cm
 Rfoot = Link('Rfoot', p=target_foot_pos, R=uLINK[RLEG_J5].R)
 
 # Calculate inverse kinematics for the right leg
