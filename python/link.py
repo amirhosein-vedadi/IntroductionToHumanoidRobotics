@@ -114,68 +114,65 @@ def ForwardKinematics(links, j):
     ForwardKinematics(links, links[j].sister)
     ForwardKinematics(links, links[j].child)
 
-if __name__ == "__main__":
-    # Create a list to hold the Link objects
-    uLINK = []
 
-    # Constants
-    ToDeg = 180 / np.pi
-    ToRad = np.pi / 180
-    UX = np.array([1, 0, 0])
-    UY = np.array([0, 1, 0])
-    UZ = np.array([0, 0, 1])
+def Rroll(angle):
+    """Rotation matrix for a roll (rotation around x-axis)."""
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return np.array([
+        [1, 0, 0],
+        [0, c, -s],
+        [0, s, c]
+    ])
 
-    # Add Link objects to the list
-    uLINK.append(Link('BODY', mass=10, sister=-1, child=1, b=np.array([0, 0, 0.7]), a=UZ, q=0))
-    uLINK.append(Link('RLEG_J0', mass=5, sister=7, child=2, b=np.array([0, -0.1, 0]), a=UZ, q=0))
-    uLINK.append(Link('RLEG_J1', mass=1, sister=-1, child=3, b=np.array([0, 0, 0]), a=UX, q=0))
-    uLINK.append(Link('RLEG_J2', mass=5, sister=-1, child=4, b=np.array([0, 0, 0]), a=UY, q=0))
-    uLINK.append(Link('RLEG_J3', mass=1, sister=-1, child=5, b=np.array([0, 0, -0.3]), a=UY, q=0))
-    uLINK.append(Link('RLEG_J4', mass=6, sister=-1, child=6, b=np.array([0, 0, -0.3]), a=UY, q=0))
-    uLINK.append(Link('RLEG_J5', mass=2, sister=-1, child=-1, b=np.array([0, 0, 0]), a=UX, q=0))
-    uLINK.append(Link('LLEG_J0', mass=5, sister=-1, child=8, b=np.array([0, 0.1, 0]), a=UZ, q=0))
-    uLINK.append(Link('LLEG_J1', mass=1, sister=-1, child=9, b=np.array([0, 0, 0]), a=UX, q=0))
-    uLINK.append(Link('LLEG_J2', mass=5, sister=-1, child=10, b=np.array([0, 0, 0]), a=UY, q=0))
-    uLINK.append(Link('LLEG_J3', mass=1, sister=-1, child=11, b=np.array([0, 0, -0.3]), a=UY, q=0))
-    uLINK.append(Link('LLEG_J4', mass=6, sister=-1, child=12, b=np.array([0, 0, -0.3]), a=UY, q=0))
-    uLINK.append(Link('LLEG_J5', mass=2, sister=-1, child=-1, b=np.array([0, 0, 0]), a=UX, q=0))
+def Rpitch(angle):
+    """Rotation matrix for a pitch (rotation around y-axis)."""
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return np.array([
+        [c, 0, s],
+        [0, 1, 0],
+        [-s, 0, c]
+    ])
 
-    # Find mother link from sister and child data
-    FindMother(uLINK, 0)
+def RPY2R(rpy):
+    """Convert roll-pitch-yaw angles to a rotation matrix."""
+    roll, pitch, yaw = rpy
+    R = np.array([
+        [np.cos(yaw) * np.cos(pitch), np.cos(yaw) * np.sin(pitch) * np.sin(roll) - np.sin(yaw) * np.cos(roll), np.cos(yaw) * np.sin(pitch) * np.cos(roll) + np.sin(yaw) * np.sin(roll)],
+        [np.sin(yaw) * np.cos(pitch), np.sin(yaw) * np.sin(pitch) * np.sin(roll) + np.cos(yaw) * np.cos(roll), np.sin(yaw) * np.sin(pitch) * np.cos(roll) - np.cos(yaw) * np.sin(roll)],
+        [-np.sin(pitch), np.cos(pitch) * np.sin(roll), np.cos(pitch) * np.cos(roll)]
+    ])
+    return R
 
-    # Find children
-    FindChildren(uLINK)
-
-    # Substitute the ID to the link name variables. For example, BODY=0.
-    for n, link in enumerate(uLINK):
-        globals()[link.name] = n
-
-    uLINK[BODY].p = np.array([0.0, 0.0, 0.65])
-    uLINK[BODY].R = np.eye(3)
-
-    # Initialize velocities
-    uLINK[BODY].v = np.zeros(3)
-    uLINK[BODY].w = np.zeros(3)
-    for link in uLINK:
-        link.dq = 0  # Joint speed [rad/s]
-
-    # Perform forward kinematics
-    ForwardKinematics(uLINK, 0)
-
-    # Print the link information
-    print('[[[[[ uLINK struct was set as following ]]]]]')
-    print('-------------------------------------')
-    print('ID     name    sister child   mass')
-    print('-------------------------------------')
-    for i, link in enumerate(uLINK):
-        print(f"{i:2d}  {link}")
-
-    # Print the route from BODY to LLEG_J5
-    route = FindRoute(uLINK, LLEG_J5)
-    print("\nRoute from BODY to LLEG_J5:")
-    print([uLINK[i].name for i in route])
-
-    # Print positions after forward kinematics
-    print("\nPositions after forward kinematics:")
-    for i, link in enumerate(uLINK):
-        print(f"{link.name}: {link.p}")
+def IK_leg(Body, D, A, B, Foot):
+    r = Foot.R.T @ (Body.p + Body.R @ np.array([0, D, 0]) - Foot.p)  # Relative position
+    C = np.linalg.norm(r)
+    c5 = (C**2 - A**2 - B**2) / (2.0 * A * B)
+    
+    if c5 >= 1:
+        q5 = 0.0
+    elif c5 <= -1:
+        q5 = np.pi
+    else:
+        q5 = np.arccos(c5)  # knee pitch
+    
+    q6a = np.arcsin((A / C) * np.sin(np.pi - q5))  # ankle pitch sub
+    
+    q7 = np.arctan2(r[1], r[2])  # ankle roll -pi/2 < q(6) < pi/2
+    if q7 > np.pi / 2:
+        q7 -= np.pi
+    elif q7 < -np.pi / 2:
+        q7 += np.pi
+    
+    q6 = -np.arctan2(r[0], np.sign(r[2]) * np.sqrt(r[1]**2 + r[2]**2)) - q6a  # ankle pitch
+    
+    R = Body.R.T @ Foot.R @ Rroll(-q7) @ Rpitch(-q6 - q5)  # hipZ*hipX*hipY
+    q2 = np.arctan2(-R[0, 1], R[1, 1])  # hip yaw
+    cz = np.cos(q2)
+    sz = np.sin(q2)
+    q3 = np.arctan2(R[2, 1], -R[0, 1] * sz + R[1, 1] * cz)  # hip roll
+    q4 = np.arctan2(-R[2, 0], R[2, 2])  # hip pitch
+    
+    q = np.array([q2, q3, q4, q5, q6, q7])
+    return q
